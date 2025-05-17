@@ -60,7 +60,6 @@ class abstr_class:
 
 def compute_model_nbra(q, params, full_id):
     timestep = params["timestep"]
-    #print("In compute_model_nbra, timestep = ", timestep)
     nst = params["nstates"]
     obj = abstr_class()
     
@@ -125,7 +124,41 @@ elif model_indx == 1:
     Nt = 1000 + 1
     
 model_params_nbra = dict(model_params)
-model_params_nbra.update( {"filename":F"adiabatic_md{model_indx}/mem_data.hdf", "model":0, "model0":0} )
+model_params_nbra.update( {"model":0, "model0":0} )
+
+# Read the data
+istep = 1200
+fstep = 3000 + 1
+
+path_to_save_Hvibs = "../01-sampling_dynamics/res-mb-sd-DFT"
+
+E = []
+for step in range(istep, fstep):
+    energy_filename = F"{path_to_save_Hvibs}/Hvib_{step}_re.npz"
+    energy_mat = sp.load_npz(energy_filename)
+    E.append( np.array( np.diag( energy_mat.todense() ) ) )
+E = np.array(E)
+
+St = []
+for step in range(istep, fstep):
+    St_filename = F"{path_to_save_Hvibs}/St_{step}_re.npz"
+    St_mat = sp.load_npz(St_filename)
+    St.append( np.array( St_mat.todense() ) )
+St = np.array(St)
+
+NAC = []
+Hvib = []
+for c, step in enumerate(range(istep, fstep)):
+    nac_filename = F"{path_to_save_Hvibs}/Hvib_{step}_im.npz"
+    nac_mat = sp.load_npz(nac_filename)
+    NAC.append( np.array( nac_mat.todense() ) )
+    Hvib.append( np.diag(E[c, :])*(1.0+1j*0.0)  - (0.0+1j)*nac_mat[:, :] )
+
+NAC = np.array(NAC)
+Hvib = np.array(Hvib)
+
+model_params_nbra.update({"E": E, "St": St, "NAC": NAC, "Hvib": Hvib})
+
 
 
 # ## Choose a method
@@ -136,19 +169,13 @@ method_indx = args.method_indx
 #################
 
 dyn_nbra = { "nsteps":Nt, "ntraj":250, "nstates":NSTATES,
-             "dt":0.1, "num_electronic_substeps":1, "isNBRA":0, "is_nbra":0,
-             "progress_frequency":0.1, "which_adi_states":range(NSTATES), "which_dia_states":range(NSTATES),      
+             "dt":1.0*units.fs2au, "num_electronic_substeps":1, "isNBRA":0, "is_nbra":0,
+             "progress_frequency":1, "which_adi_states":range(NSTATES), "which_dia_states":range(NSTATES),      
              "mem_output_level":3,
              "properties_to_save":[ "timestep", "time", "Epot_ave", "Ekin_ave", "Etot_ave",
                                    "Cadi", "se_pop_adi", "sh_pop_adi"],
              "prefix":F"fssh_nbra_{model_indx}", "prefix2":F"fssh_nbra_{model_indx}"
            }
-
-if model_indx == 0:
-    pass
-elif model_indx == 1:
-    dyn_nbra["dt"] = 1.0*units.fs2au
-
 
 #"ham_update_method":2  # recompute only adiabatic Hamiltonian; use with file-based or on-the-fly workflows
 #"ham_transform_method":0 # don't do any transforms; usually for NBRA or on-the-fly workflows, 
@@ -185,89 +212,47 @@ dyn_nbra.update({"rep_sh":1, "rep_lz":0, "rep_ham":0, "enforce_state_following":
 dyn_nbra.update({"prefix":F"fssh_nbra_{model_indx}", 
                  "prefix2":F"fssh_nbra_{model_indx}", })
 
-############################
-nbatches = 1
-############################
-
 #####################################
 # Select a specific initial condition
 icond_indx = args.icond_indx
 #####################################  
 
-def read_data(istep, fstep, itraj, hdf_filename, params):
-    ###########################################
-    #istep = 0    # the first timestep to read
-    #fstep = 5000 # the last timestep to read
-    #itraj = 0
-    #hdf_filename = "DATA-model4-method4-icond0/mem_data.hdf"
-    ###########################################
-    nsteps = fstep - istep
-    NSTEPS = nsteps
-    print(F"Number of steps = {nsteps}")
-
-    nstates = 1
-    with h5py.File(F"{hdf_filename}", 'r') as f:    
-        nadi = int(f["hvib_adi/data"].shape[2] )
-        nstates = nadi                                                           
-    print(F"Number of states = {nstates}")
-
-    #================== Read energies =====================
-    E, St, NAC, Hvib = [], [], [], []
-    with h5py.File(F"{hdf_filename}", 'r') as f:
-        for timestep in range(istep,fstep):
-            x = np.array( np.diag( f["hvib_adi/data"][timestep, itraj, :, :])  )
-            y = np.array( f["hvib_adi/data"][timestep, itraj, :, :] )
-            E.append( x.real )
-            NAC.append( -y.imag)
-            Hvib.append( y )
-            St_mat = np.array( f["St/data"][timestep, itraj, :, :].real  )
-            St.append( St_mat)                  
-    params["E"] = np.array(E)
-    params["St"] = np.array(St)
-    params["NAC"] = np.array(NAC)
-    params["Hvib"] = np.array(Hvib)
-
-def read_Hvib(istep, fstep, path_to_save_Hvibs, params):
-    ###########################################
-    #istep = 0    # the first timestep to read
-    #fstep = 5000 # the last timestep to read
-    #itraj = 0
-    #path_to_save_Hvibs = "res-mb-sd-DFT"
-    ###########################################
-    nsteps = fstep - istep
-    NSTEPS = nsteps
-    print(F"Number of steps = {nsteps}")
-
-    NSTEPS = fstep - istep
-    #================== Read energies =====================
-    E = []
-    for step in range(istep,fstep):
-        energy_filename = F"{path_to_save_Hvibs}/Hvib_ci_{step}_re.npz"
-        energy_mat = sp.load_npz(energy_filename)
-        # For data conversion we need to turn np.ndarray to np.array so that 
-        # we can use data_conv.nparray2CMATRIX
-        E.append( np.array( np.diag( energy_mat.todense() ) ) )
-    params["E"] = np.array(E)
+if method_indx == 1:
+    NSTATES = 55
+        
+    A = MATRIX(NSTATES, NSTATES)
     
-    NSTATES = E[0].shape[0]
-    #================== Read time-overlap =====================
-    St = []
-    for step in range(istep,fstep):        
-        St_filename = F"{path_to_save_Hvibs}/St_ci_{step}_re.npz"
-        St_mat = sp.load_npz(St_filename)
-        St.append( np.array( St_mat.todense() ) )
-    params["St"] = np.array(St)
-    #================ Compute NACs and vibronic Hamiltonians along the trajectory ============    
-    NAC = []
-    Hvib = [] 
-    for c, step in enumerate(range(istep,fstep)):
-        nac_filename = F"{path_to_save_Hvibs}/Hvib_ci_{step}_im.npz"
-        nac_mat = sp.load_npz(nac_filename)
-        NAC.append( np.array( nac_mat.todense() ) )
-        Hvib.append( np.diag(params["E"][c, :])*(1.0+1j*0.0)  - (0.0+1j)*nac_mat[:, :] )
+    nbatches = 5
     
-    params["NAC"] = np.array(NAC)
-    params["Hvib"] = np.array(Hvib)
+    for ib in range(nbatches):
+        if ib == 0:
+            istep, fstep = 0, 1000 + 1
+        elif ib == 1:
+            istep, fstep = 50, 1050 + 1
+        elif ib == 2:
+            istep, fstep = 100, 1100 + 1
+        elif ib == 3:
+            istep, fstep = 150, 1150 + 1
+        elif ib == 4:
+            istep, fstep = 198, 1198 + 1
+    
+        E_batch = model_params_nbra["E"][istep:fstep, :]
+    
+        e2 = np.zeros((fstep-istep, NSTATES, NSTATES))
+        for i in range(NSTATES):
+            for j in range(NSTATES):
+                de = np.average(E_batch[:,i] - E_batch[:,j]) 
+                e2[:,i,j] = (E_batch[:,i] - E_batch[:,j] - de)**2
+        ave_e2 = np.average(e2, axis=0) # nstates, nstates
+        
+        invtaus.append(np.sqrt(5/12*ave_e2))
+        
+    invtaus = np.array(invtaus)
+
+    A = data_conv.nparray2MATRIX(np.average(invtaus, axis=0))
+    A.show_matrix()
+    
+    dyn_nbra.update({"decoherence_algo": 0, "decoherence_times_type": 0, "decoherence_rates": A})
 
 icond_elec = 1
 
@@ -299,71 +284,21 @@ nucl_params = { "ndof":1,
             "p_width":[ 0.0 ]*10,
             "init_type":3 }    
 
-if method_indx == 1:
-    NSTATES = 55
-    
-    nbatches = 5
-    
-    invtaus = []
-    for ib in range(nbatches):
-        if ib == 0:
-            istep, fstep = 1800, 2800 + 1
-        elif ib == 1:
-            istep, fstep = 1850, 2850 + 1
-        elif ib == 2:
-            istep, fstep = 1900, 2900 + 1
-        elif ib == 3:
-            istep, fstep = 1950, 2950 + 1
-        elif ib == 4:
-            istep, fstep = 1998, 2998 + 1
-    
-        path_to_save_Hvibs = F"../SAMP/C60_step3/res-mb-sd-DFT/"
-        model_params_temp = {}
-        read_Hvib(istep, fstep, path_to_save_Hvibs, model_params_temp)
-    
-        A = MATRIX(NSTATES, NSTATES)
-    
-        e2 = np.zeros((fstep-istep, NSTATES, NSTATES))
-    
-        # dt = 1.0 fs
-        for i in range(NSTATES):
-            for j in range(NSTATES):
-                de = np.average(model_params_temp["E"][:,i] - model_params_temp["E"][:,j])
-                e2[:,i,j] = (model_params_temp["E"][:,i] - model_params_temp["E"][:,j] - de)**2
-        ave_e2 = np.average(e2, axis=0) # nstates, nstates
-        
-        invtau = np.sqrt(5/12*ave_e2)
-        invtaus.append(invtau)
-    invtaus = np.array(invtaus)
+dyn_params = dict(dyn_nbra)
 
-    A = data_conv.nparray2MATRIX(np.average(invtaus, axis=0))
-    A.show_matrix()
-    
-    dyn_nbra.update({"decoherence_algo": 0, "decoherence_times_type": 0, "decoherence_rates": A})
-
-#%%time
 ibatch = args.ibatch
 
 if ibatch == 0:
-    istep, fstep = 1800, 2800 + 1
+    dyn_params.update({"icond":0})
 elif ibatch == 1:
-    istep, fstep = 1850, 2850 + 1
+    dyn_params.update({"icond":50})
 elif ibatch == 2:
-    istep, fstep = 1900, 2900 + 1
+    dyn_params.update({"icond":100})
 elif ibatch == 3:
-    istep, fstep = 1950, 2950 + 1
+    dyn_params.update({"icond":150})
 elif ibatch == 4:
-    istep, fstep = 1998, 2998 + 1
-    
-if model_indx == 0:
-    istep, fstep, itraj = 0, Nt, 0
-    hdf_filename = F"adiabatic_md{model_indx}_icond{icond_indx}_batch_{ibatch}/mem_data.hdf"
-    read_data(istep, fstep, itraj, hdf_filename, model_params_nbra)
-elif model_indx == 1:
-    path_to_save_Hvibs = F"../SAMP/C60_step3/res-mb-sd-DFT/"
-    read_Hvib(istep, fstep, path_to_save_Hvibs, model_params_nbra)
+    dyn_params.update({"icond":198})
 
-dyn_params = dict(dyn_nbra)
 if method_indx == 0:
     dyn_params.update({"prefix":F"fssh_nbra_{model_indx}_icond_{icond_indx}_batch_{ibatch}", 
                        "prefix2":F"fssh_nbra_{model_indx}_icond_{icond_indx}_batch_{ibatch}"})
@@ -374,9 +309,8 @@ elif method_indx == 1:
 rnd = Random()
 
 # Run NBRA
-dyn_params.update({"icond": 0, "nsteps":Nt })
+dyn_params.update({"nsteps":Nt })
 
-print(dyn_params["prefix"])
 res = tsh_dynamics.generic_recipe(dyn_params, compute_model, model_params_nbra, elec_params, nucl_params, rnd)
 
 if method_indx == 0:

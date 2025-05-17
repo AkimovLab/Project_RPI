@@ -224,13 +224,6 @@ if method_indx == 1:
     
     invtaus = []
 
-    E = []
-    for step in range(12000000, 28000000 + 1):
-        energy_filename = F"../01-sampling_dynamics/res/Hvib_{step}_re.npz"
-        energy_mat = sp.load_npz(energy_filename)
-        E.append( np.array( np.diag( energy_mat.todense() ) ) )
-    E = np.array(E)
-
     for ib in range(nbatches):
         if ib == 0:
             istep, fstep = 0, 8000000 + 1
@@ -260,8 +253,6 @@ if method_indx == 1:
     A.show_matrix()
     
     dyn_nbra.update({"decoherence_algo": 0, "decoherence_times_type": 0, "decoherence_rates": A})
-    dyn_nbra.update({"prefix":F"msdm_nbra_{model_indx}", 
-                     "prefix2":F"msdm_nbra_{model_indx}", })
 
 icond_elec = 1
 
@@ -280,15 +271,14 @@ if model_indx == 0:
     elec_params["istate"] = 1 # The initial state is set to 1, while sampling is done at ground-state PES
         
 # Dummy nucl param
-if model_indx == 0:
-    nucl_params = { "ndof":1,
-                "q":[0.0]*10,
-                "p":[0.0]*10, 
-                "mass":[1836.0]*10, 
-                "force_constant":[0.0]*10, 
-                "q_width":[ 0.0 ]*10,
-                "p_width":[ 0.0 ]*10,
-                "init_type":3 }    
+nucl_params = { "ndof":1,
+            "q":[0.0]*10,
+            "p":[0.0]*10, 
+            "mass":[1836.0]*10, 
+            "force_constant":[0.0]*10, 
+            "q_width":[ 0.0 ]*10,
+            "p_width":[ 0.0 ]*10,
+            "init_type":3 }    
 
 dyn_params = dict(dyn_nbra)
 
