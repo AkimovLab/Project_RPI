@@ -1,5 +1,5 @@
 #!/bin/bash
-for j in 0; do
+for j in $(seq 0 1); do
     for i in $(seq 0 4); do
         sleep 1m
         echo "Submitting jobs for ibatch=$i and method=$j ##############"
